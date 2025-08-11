@@ -71,7 +71,12 @@ class RAG:
             - Say "I don't see that information in the document" if something isn't covered
             Always be accurate, helpful, and clear. Prioritize document content, but provide necessary context when you're completely confident it's relevant and helpful.
         """
-
-
-
-
+        with lms.Client() as client:
+            model = client.llm.model("qwen/qwen3-4b")
+            response = model.respond(
+                prompt.format(
+                    query=query,
+                    document=self.perform_cosine_similarity(query, self.corpus)
+                )
+            )
+            return response
