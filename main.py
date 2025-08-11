@@ -6,14 +6,23 @@ from enum import Enum
 
 url = "http://localhost:1234"
 
-class SimilarityMetric(Enum):
-    jacquard = "jacquard"
-    cosine = "cosine"
-
 class RAG:
     def __init__(self, pdf_path: str):
         self.chunks = self.create_page_chunks(pdf_path)
-        self.corpus = [chunk['content'] for chunk in self.chunks]
+        self.history = lms.Chat(
+                """
+                You are a helpful document analysis assistant. 
+                Users can upload PDFs and ask questions about their content. 
+                Your job:
+                - Answer questions based primarily on the uploaded document
+                - Cite page numbers when possible at the end your response.
+                - Explain complex information in simple terms
+                - You may use outside knowledge only when you are absolutely certain it provides essential context or clarification
+                - Say "I don't see that information in the document" if something isn't covered
+                Always be accurate, concise, and clear. Prioritize document content, but provide necessary context when you're completely confident it's relevant and helpful.
+                """
+            )
+        self.chunk_embedding = None
 
     def create_page_chunks(self, path):
         chunks = []
@@ -33,15 +42,15 @@ class RAG:
                     chunks.append(chunk)
         return chunks
     
-    def perform_cosine_similarity(self, query, corpus):
+    def perform_similarity_search(self, query,):
         with lms.Client() as client:
             embedding_model = client.embedding.model("text-embedding-nomic-embed-text-v1.5")
             
-            corpus_embedding = embedding_model.embed(corpus)
+            chunk_embedding = embedding_model.embed([chunk["content"] for chunk in self.chunks]) if self.chunk_embedding is None else self.chunk_embedding
             query_embedding = embedding_model.embed(query)
 
-            A = np.array(corpus_embedding)
-            B = np.array(query_embedding).reshape(1,-1)
+            A = np.array(chunk_embedding)
+            B = np.array(query_embedding).reshape(1, -1)
 
             similarities = cosine_similarity(A, B)
 
@@ -49,34 +58,35 @@ class RAG:
             sorted_index = sorted(indexed, key=lambda x : x[1], reverse=True)
 
             similarity_threshold = 0.3
-            recommended = []
+            recommended : list[str] = []
 
             for k, v in sorted_index:
                 if v >= similarity_threshold:
-                    recommended.append(corpus[k])
+                    recommended.append(self.chunks[k])
             
-            return recommended
+            with open("similarity-stats.txt", "wb") as file:
+                for line in recommended:
+                    file.write(str(line).encode("utf-8"))
+            return recommended[:7]
     
-    def generate_summary(self, query):
-        prompt = """
-            You are a helpful document analysis assistant. Users can upload PDFs and ask questions about their content.
-            The user's query is: {query}
-            The relevant document is: {document}
-
-            Your job:
-            - Answer questions based primarily on the uploaded document
-            - Cite page numbers when possible
-            - Explain complex information in simple terms
-            - You may use outside knowledge only when you are absolutely certain it provides essential context or clarification
-            - Say "I don't see that information in the document" if something isn't covered
-            Always be accurate, helpful, and clear. Prioritize document content, but provide necessary context when you're completely confident it's relevant and helpful.
-        """
-        with lms.Client() as client:
-            model = client.llm.model("qwen/qwen3-4b")
-            response = model.respond(
-                prompt.format(
-                    query=query,
-                    document=self.perform_cosine_similarity(query, self.corpus)
-                )
+    def chat(self, query: str):
+        if len(query) > 0:
+            prompt = """
+            The relevant document: {document}
+            The user's query: {query}
+            """.format(
+                document=self.perform_similarity_search(query),
+                query=query    
             )
-            return response
+            self.history.add_user_message(prompt)
+            with lms.Client() as client:
+                
+                model = client.llm.model("qwen/qwen3-4b")
+                response = model.respond_stream(
+                    prompt,
+                )
+                for fragment in response:
+                    print(fragment.content, end='', flush=True)
+                print()
+                return response
+        raise ValueError("Empty query")
