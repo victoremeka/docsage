@@ -1,49 +1,40 @@
-# Simple RAG App
+# Doc Sage
 
-A document analysis assistant that uses RAG (Retrieval-Augmented Generation) to answer questions about uploaded PDF documents.
+A document Q&A assistant that uses RAG (Retrieval-Augmented Generation) to answer questions about PDF documents with page-level citations.
 
 ## Features
 
-- **Page-level chunking** - Splits PDFs into page-based chunks for precise citations
-- **Semantic search** - Uses embeddings and cosine similarity to find relevant content
-- **Document-grounded responses** - Answers questions based primarily on uploaded content
-- **Page citations** - References specific pages when providing answers
+- PDF processing with page-level chunking
+- Semantic search using cosine similarity (threshold: 0.3)
+- Streaming responses with conversation history
+- Precise page citations for transparency
 
 ## Requirements
 
 - Python 3.13+
-- LM Studio running locally on `http://localhost:1234`
-- Models: `text-embedding-nomic-embed-text-v1.5` (embeddings), `qwen/qwen3-4b` (LLM)
+- LM Studio running on `http://localhost:1234`
+- Models: `text-embedding-nomic-embed-text-v1.5`, `qwen/qwen3-4b`
 
-## Installation
+## Quick Start
 
 ```bash
-uv add lmstudio scikit-learn pymupdf
-```
+# Install dependencies
+uv sync
 
-## Usage
+# Or with pip
+pip install lmstudio scikit-learn pymupdf
+```
 
 ```python
 from main import RAG
 
-# Initialize with PDF path
 rag = RAG("document.pdf")
-
-# Ask questions about the document
-response = rag.generate_summary("What are the main findings?")
-print(response)
+rag.chat("What are the main findings?")  # Streams response to console
 ```
 
-## How it works
+## How it Works
 
-1. **Document Processing** - Extracts text from each PDF page with metadata
-2. **Retrieval** - Embeds query and document pages, finds most similar content
-3. **Generation** - Uses retrieved content to generate contextual responses
-4. **Citation** - Maintains page-level references for transparency
-
-## Architecture
-
-- `RAG` class handles the complete pipeline
-- Page-level chunking preserves document structure
-- Cosine similarity for semantic retrieval
-- LM Studio integration for local LLM inference
+1. **Extract** - Splits PDF into page-based chunks with metadata
+2. **Embed** - Creates embeddings for query and document pages  
+3. **Retrieve** - Finds top 7 most similar chunks (cosine similarity ≥ 0.3)
+4. **Generate** - Uses LM Studio to create contextual responses with page citations
