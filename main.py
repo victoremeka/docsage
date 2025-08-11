@@ -1,55 +1,77 @@
-from utils import *
+import lmstudio as lms
+from sklearn.metrics.pairwise import cosine_similarity
+import numpy as np
+import pymupdf
+from enum import Enum
+
+url = "http://localhost:1234"
+
+class SimilarityMetric(Enum):
+    jacquard = "jacquard"
+    cosine = "cosine"
 
 class RAG:
-    corpus = []
+    def __init__(self, pdf_path: str):
+        self.chunks = self.create_page_chunks(pdf_path)
+        self.corpus = [chunk['content'] for chunk in self.chunks]
 
-    def __init__(self, corpus:list[str] | None = None):
-        if corpus is None:
-            self.corpus = [
-                "Take a leisurely walk in the park and enjoy the fresh air.",
-                "Visit a local museum and discover something new.",
-                "Attend a live music concert and feel the rhythm.",
-                "Go for a hike and admire the natural scenery.",
-                "Have a picnic with friends and share some laughs.",
-                "Explore a new cuisine by dining at an ethnic restaurant.",
-                "Take a yoga class and stretch your body and mind.",
-                "Join a local sports league and enjoy some friendly competition.",
-                "Attend a workshop or lecture on a topic you're interested in.",
-                "Visit an amusement park and ride the roller coasters."
-            ]
-        else:
-            self.corpus = corpus
+    def create_page_chunks(self, path):
+        chunks = []
+        with pymupdf.open(path) as doc:
+            for page_num in range(doc.page_count):
+                page = doc[page_num]
+                text = page.get_text()
+
+                if text.strip():
+                    chunk = {
+                        "id" : f"page_{page_num+1}",
+                        "content" : text.strip(),
+                        "page_number" : page_num + 1,
+                        "source_file" : path,
+                        "chunk_type" : "page",
+                    }
+                    chunks.append(chunk)
+        return chunks
     
-    def perform_jacquard_similarity(self, query, document):
-        query = query.lower().split()
-        document = document.lower().split()
-        intersection = set(query).intersection(set(document))
-        union = set(query).union(set(document))
-        return len(intersection)/len(union)
-    
-    def return_similarities(self, query):
-        sims = []
-        for document in self.corpus:
-            sims.append((self.perform_jacquard_similarity(query=query, document=document), document))
-        return sorted(sims, key=lambda x : x[0], reverse=True)
+    def perform_cosine_similarity(self, query, corpus):
+        with lms.Client() as client:
+            embedding_model = client.embedding.model("text-embedding-nomic-embed-text-v1.5")
+            
+            corpus_embedding = embedding_model.embed(corpus)
+            query_embedding = embedding_model.embed(query)
+
+            A = np.array(corpus_embedding)
+            B = np.array(query_embedding).reshape(1,-1)
+
+            similarities = cosine_similarity(A, B)
+
+            indexed = [(k,v) for k,v in enumerate(similarities)]
+            sorted_index = sorted(indexed, key=lambda x : x[1], reverse=True)
+
+            similarity_threshold = 0.3
+            recommended = []
+
+            for k, v in sorted_index:
+                if v >= similarity_threshold:
+                    recommended.append(corpus[k])
+            
+            return recommended
     
     def generate_summary(self, query):
-        pass
+        prompt = """
+            You are a helpful document analysis assistant. Users can upload PDFs and ask questions about their content.
+            The user's query is: {query}
+            The relevant document is: {document}
 
-tool = RAG()
+            Your job:
+            - Answer questions based primarily on the uploaded document
+            - Cite page numbers when possible
+            - Explain complex information in simple terms
+            - You may use outside knowledge only when you are absolutely certain it provides essential context or clarification
+            - Say "I don't see that information in the document" if something isn't covered
+            Always be accurate, helpful, and clear. Prioritize document content, but provide necessary context when you're completely confident it's relevant and helpful.
+        """
 
 
-prompt = """
-You are a helpful document analysis assistant. Users can upload PDFs and ask questions about their content.
-The user's query is: {query}
-The relevant document is: {document}
 
-Your job:
-- Answer questions based primarily on the uploaded document
-- Cite page numbers when possible
-- Explain complex information in simple terms
-- You may use outside knowledge only when you are absolutely certain it provides essential context or clarification
-- Say "I don't see that information in the document" if something isn't covered
-Always be accurate, helpful, and clear. Prioritize document content, but provide necessary context when you're completely confident it's relevant and helpful.
 
-"""

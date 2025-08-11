@@ -6,5 +6,6 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "lmstudio>=1.4.1",
+    "pymupdf>=1.26.3",
     "scikit-learn>=1.7.1",
 ]
