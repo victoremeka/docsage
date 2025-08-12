@@ -42,11 +42,11 @@ class RAG:
                     chunks.append(chunk)
         return chunks
     
-    def perform_similarity_search(self, query,):
+    def perform_similarity_search(self, query, chunks):
         with lms.Client() as client:
             embedding_model = client.embedding.model("text-embedding-nomic-embed-text-v1.5")
             
-            chunk_embedding = embedding_model.embed([chunk["content"] for chunk in self.chunks]) if self.chunk_embedding is None else self.chunk_embedding
+            chunk_embedding = embedding_model.embed([chunk["content"] for chunk in chunks])
             query_embedding = embedding_model.embed(query)
 
             A = np.array(chunk_embedding)
@@ -62,20 +62,29 @@ class RAG:
 
             for k, v in sorted_index:
                 if v >= similarity_threshold:
-                    recommended.append(self.chunks[k])
-            
-            with open("similarity-stats.txt", "wb") as file:
-                for line in recommended:
-                    file.write(str(line).encode("utf-8"))
+                    recommended.append(chunks[k])
+
             return recommended[:7]
     
+    def perform_smart_chunking(self, query):
+        candidates = []
+        chunks = self.chunks.copy()
+        while len(chunks) > 30:
+            focus_chunks = chunks[:30]
+            candidates.extend(self.perform_similarity_search(query, focus_chunks))
+            chunks = chunks[30:]
+
+        candidates.extend(self.perform_similarity_search(query, chunks))
+
+        return self.perform_similarity_search(query, candidates)
+
     def chat(self, query: str):
         if len(query) > 0:
             prompt = """
             The relevant document: {document}
             The user's query: {query}
             """.format(
-                document=self.perform_similarity_search(query),
+                document=self.perform_smart_chunking(query),
                 query=query    
             )
             self.history.add_user_message(prompt)
