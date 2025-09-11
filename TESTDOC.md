@@ -8,5 +8,5 @@ not so stable, hm.
 burghen spold yu it waill
 
 ```python
-printf("hello world")
+print("hello world")
 ```
